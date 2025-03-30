@@ -1,0 +1,215 @@
+```{r}
+## Carga de paquetes
+library(SummarizedExperiment)
+library(tidyverse)
+library(ggplot2)
+library(ggpubr)
+library(patchwork)
+library(corrplot)
+library(FactoMineR)
+library(factoextra)
+```
+
+Se cargan los datos y se modifican los valores nulos.
+
+```{r}
+# Cargar las librerías necesarias
+library(SummarizedExperiment)
+
+# Definir la ruta de los archivos
+ruta <- "/Users/isabelterrero/Documents/Datos_omicos/"
+
+# Cargar los datos
+data_values <- read.csv(paste0(ruta, "DataValues_S013.csv"), row.names = 1)
+data_info <- read.csv(paste0(ruta, "DataInfo_S013.csv"), row.names = 1)
+
+# Sustituir los valores nulos en data_values (variables numéricas) por 0
+num_cols_values <- sapply(data_values, is.numeric)
+
+# Reemplazar NAs por 0 en las columnas numéricas
+data_values[, num_cols_values] <- lapply(data_values[, num_cols_values], function(x) {
+  x[is.na(x)] <- 0
+  return(x)
+})
+
+# Sustituir los valores nulos en data_info (variables categóricas) por NA
+cat_cols_info <- sapply(data_info, is.factor)
+
+# Reemplazar NAs por NA en las columnas categóricas
+data_info[, !cat_cols_info] <- lapply(data_info[, !cat_cols_info], function(x) {
+  x[is.na(x)] <- NA
+  return(x)
+})
+
+# Verificar las dimensiones y contenido después de la sustitución
+cat("Dimensiones de data_values después de reemplazo de NAs:", dim(data_values), "\n")
+cat("Dimensiones de data_info después de reemplazo de NAs:", dim(data_info), "\n")
+```
+
+Se crea el objeto SummarizedExperiment
+
+```{r}
+# Crear el objeto SummarizedExperiment
+se <- SummarizedExperiment(
+  assays = list(counts = as.matrix(data_values)), 
+  colData = data_info
+)
+# Verificar el objeto SummarizedExperiment creado
+se
+# Guardar
+save(se, file = "summarized_experiment.rda")
+```
+
+```{r}
+# Acceder a la matriz de datos de expresión
+counts_data <- assays(se)$counts
+head(assays(se)$counts)
+
+
+```
+
+```{r}
+# Extraer la matriz de datos "counts" del objeto SummarizedExperiment
+counts_matrix <- assay(se) 
+
+colnames(counts_matrix)
+
+```
+
+Seleccion de las columnas a analizar
+
+```{r}
+# Extraer las columnas específicas
+age_data <- as.numeric(counts_matrix[, "AGE"]) 
+bmi_data <- as.numeric(counts_matrix[, "bmi_T0"])  
+glu_data <- as.numeric(counts_matrix[, "GLU_T0"])  
+gender_data <- counts_matrix[, "GENDER"]
+surgery_data <- counts_matrix[, "SURGERY"]
+peso_data <- as.numeric(counts_matrix[, "PESO_T0"])
+```
+
+Analisis univariante
+
+```{r}
+# Análisis univariante para la variable AGE
+summary(age_data)  # Resumen estadístico
+hist(age_data, main = "Histograma de AGE", xlab = "Edad", ylab= "Frecuencia", col = "lightblue", border = "black")
+
+# Análisis univariante para la variable BMI
+summary(bmi_data)  # Resumen estadístico
+hist(bmi_data, main = "Histograma de BMI", xlab = "BMI", ylab= "Frecuencia", col = "lightgreen", border = "black")
+
+# Análisis univariante para la variable GLU
+summary(glu_data)  # Resumen estadístico
+hist(glu_data, main = "Histograma de glucosa", xlab = "GLU", ylab= "Frecuencia", col = "yellow", border = "black")
+
+# Análisis univariante para la variable GLU
+summary(peso_data)  # Resumen estadístico
+hist(peso_data, main = "Histograma de peso", xlab = "Peso", ylab= "Frecuencia", col = "brown", border = "black")
+
+# Gráfico de barras para la variable gender
+barplot(table(gender_data), 
+        main = "Distribución de Género", 
+        xlab = "Género", 
+        ylab = "Frecuencia", 
+        col = "lightblue", 
+        border = "black")
+
+# Gráfico de barras para la variable surgery
+barplot(table(surgery_data), 
+        main = "Distribución del tipo de Cirugía", 
+        xlab = "Cirugía", 
+        ylab = "Frecuencia", 
+        col = "orange", 
+        border = "black")
+```
+
+Analisis multivariante
+
+```{r}
+# Seleccionar las variables para el análisis multivariante
+data_multivariante <- data.frame(Edad = age_data, ICM = bmi_data, Glucosa = glu_data, Peso = peso_data)
+
+# Calcular la matriz de correlación
+cor_matrix <- cor(data_multivariante, use = "complete.obs")
+print(cor_matrix)
+
+# Visualizar la matriz de correlación usando un gráfico
+library(ggplot2)
+library(reshape2)
+
+# Convertir la matriz de correlación a formato largo
+cor_melted <- melt(cor_matrix)
+
+# Gráfico de la matriz de correlación
+ggplot(cor_melted, aes(Var1, Var2, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient2(midpoint = 0, low = "blue", high = "red", mid = "white") +
+  theme_minimal() +
+  labs(title = "Matriz de Correlación", x = "", y = "")
+
+```
+
+```{r}
+# Comparar AGE entre los géneros (suponiendo que "GENDER" está en `counts_matrix`)
+gender_data <- as.factor(counts_matrix[, "GENDER"])  # Asegúrate de que "GENDER" esté en las columnas
+
+# Boxplot para comparar AGE por GENDER
+boxplot(age_data ~ gender_data, main = "Edad por Género", xlab = "Género", ylab = "Edad", col = c("lightblue", "lightgreen"))
+
+```
+
+```{r}
+# counts_matrix a un data.frame
+counts_df <- as.data.frame(counts_matrix)
+
+# Extraer las variables de peso y BMI del data.frame
+peso <- as.numeric(counts_df$PESO_T0)
+bmi <- as.numeric(counts_df$bmi_T0) 
+
+# Realizar el test ANOVA entre peso y BMI
+anova_peso_bmi <- aov(peso ~ bmi, data = counts_df)
+
+# Mostrar los resultados del test ANOVA
+summary(anova_peso_bmi)
+
+```
+
+El p-value de este test anova es 2.69e-10, muy pequeño lo cual indica que el bmi tiene una relacion estadisticamente significativa con el peso.
+
+```{r}
+# Convertir counts_matrix a un data.frame si no lo has hecho aún
+counts_df <- as.data.frame(counts_matrix)
+
+# Realizar el test ANOVA entre peso y glucosa
+anova_edad_glucosa <- aov(age_data ~ glu_data, data = counts_df)
+
+# Mostrar los resultados del test ANOVA
+summary(anova_edad_glucosa)
+
+```
+
+el p-value es 0.286, mucho mayor que 0.05 lo que indica que el peso no tiene un efecto estadisticamente significativo sobre el peso.
+
+```{r}
+
+# Crear un data.frame para el box plot
+df_boxplot <- data.frame(peso = peso_data, glucosa = glu_data)
+
+# Box plot de Edad con Glucosa
+library(ggplot2)
+ggplot(df_boxplot, aes(x = as.factor(peso), y = glucosa)) +
+  geom_boxplot() +
+  labs(title = "Distribución de la Glucosa según Peso", x = "Peso", y = "Glucosa") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+```
+
+```{r}
+# Regresión múltiple: Peso ~ Edad + BMI + Glucosa
+modelo_regresion_multiple <- lm(peso_data ~ age_data + bmi_data + glu_data, data = counts_df)
+
+# Resumen del modelo
+summary(modelo_regresion_multiple)
+
+```
